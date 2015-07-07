@@ -8,12 +8,22 @@ app.config([
             .state('home', {
                 url: '/home',
                 templateUrl: '/home.html',
-                controller: 'MainCtrl'
+                controller: 'MainCtrl',
+                resolve: {
+                    postPromise: ['posts', function(posts){
+                        return posts.getAll();
+                    }]
+                }
             })
             .state('posts', {
                 url: '/posts/{id}',
                 templateUrl: '/posts.html',
-                controller: 'PostsCtrl'
+                controller: 'PostsCtrl',
+                resolve: {
+                    post: ['$stateParams', 'posts', function($stateParams, posts){
+                        return posts.get($stateParams.id);
+                    }]
+                }
             })
         ;
 
@@ -29,82 +39,77 @@ app.controller('MainCtrl', [
 
         $scope.addPost = function(){
             if(!$scope.postTitle || $scope.postTitle === '') { return; }
-            $scope.posts.push({
+            posts.create({
                 title: $scope.postTitle, 
-                link: $scope.postLink,
-                upvotes: 0,
-                comments: [
-                    {author: 'Joe', body: 'Cool post!', upvotes: 0},
-                    {author: 'Bob', body: 'Great idea but everything is wrong!', upvotes: 0}
-                ]
+                link: $scope.postLink
             });
             $scope.postTitle = '';
             $scope.postLink = '';
         };
 
         $scope.incrementUpvotes = function(post){
-            post.upvotes += 1;
+            posts.upvote(post);
         };
     }
 ]);
 
 app.controller('PostsCtrl', [
     '$scope',
-    '$stateParams',
     'posts',
-    function($scope, $stateParams, posts){
-        $scope.post = posts.posts[$stateParams.id];
+    'post',
+    function($scope, posts, post){
+        $scope.post = post;
 
         $scope.addComment = function(){
             if($scope.commentBody === '') { return; }
-            $scope.post.comments.push({
+            posts.addComment(post._id, {
                 body: $scope.commentBody,
-                author: 'user',
-                upvotes: 0
-            });
+                author: 'user'
+            }).success(function(comment){
+                $scope.post.comments.push(comment);
+            })
             $scope.commentBody = '';
         };
 
         $scope.incrementUpvotes = function(comment){
-            comment.upvotes += 1;
+            posts.upvoteComment(post, comment);
         };
     }
 ]);
 
-app.factory('posts', [function(){
+app.factory('posts', ['$http', function($http){
     var o = {
-        posts: [
-            { title: 'post 1', upvotes: 5,
-                comments: [
-                    {author: 'Joe', body: 'Cool post!', upvotes: 0},
-                    {author: 'Bob', body: 'Great idea but everything is wrong!', upvotes: 0}
-                ]
-            },
-            { title: 'post 2', upvotes: 2,
-                comments: [
-                    {author: 'Joe', body: 'Cool post!', upvotes: 0},
-                    {author: 'Bob', body: 'Great idea but everything is wrong!', upvotes: 0}
-                ]
-            },
-            { title: 'post 3', upvotes: 15,
-                comments: [
-                    {author: 'Joe', body: 'Cool post!', upvotes: 0},
-                    {author: 'Bob', body: 'Great idea but everything is wrong!', upvotes: 0}
-                ]
-            },
-            { title: 'post 4', upvotes: 9,
-                comments: [
-                    {author: 'Joe', body: 'Cool post!', upvotes: 0},
-                    {author: 'Bob', body: 'Great idea but everything is wrong!', upvotes: 0}
-                ]
-            },
-            { title: 'post 5', upvotes: 4,
-                comments: [
-                    {author: 'Joe', body: 'Cool post!', upvotes: 0},
-                    {author: 'Bob', body: 'Great idea but everything is wrong!', upvotes: 0}
-                ]
-            }
-        ]
+        posts: [],
+        getAll: function(){
+            return $http.get('/posts').success(function(data){
+                angular.copy(data, o.posts);
+            });
+        },
+        create: function(post){
+            return $http.post('/posts', post).success(function(data){
+                o.posts.push(data);
+            });
+        },
+        upvote: function(post){
+            return $http.put('/posts/' + post._id + '/upvote')
+                .success(function(data){
+                    post.upvotes += 1;
+                });
+        },
+        get: function(id){
+            return $http.get('/posts/' + id).then(function(res){
+                return res.data;
+            });
+        },
+        addComment: function(id, comment){
+            return $http.post('/posts/' + id + '/comments', comment);
+        },
+        upvoteComment: function(post, comment){
+            return $http.put('/posts/' + post._id + '/comments/' + comment._id + '/upvote')
+                .success(function(data){
+                    comment.upvotes += 1;
+                });
+        }
     };
     return o;
 }]);
